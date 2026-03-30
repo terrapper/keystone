@@ -2,20 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { motion } from "framer-motion";
+import { IconHome, IconCompass, IconTimer, IconJournal, IconUser } from "./icons";
 
 const tabs = [
-  { href: "/today", label: "Today", icon: "\u2600\uFE0F" },
-  { href: "/journeys", label: "Journeys", icon: "\uD83D\uDDFA\uFE0F" },
-  { href: "/focus", label: "Focus", icon: "\uD83C\uDFAF" },
-  { href: "/reflect", label: "Reflect", icon: "\uD83D\uDCDD" },
-  { href: "/you", label: "You", icon: "\uD83D\uDC64" },
+  { href: "/today", label: "Today", Icon: IconHome },
+  { href: "/journeys", label: "Journeys", Icon: IconCompass },
+  { href: "/focus", label: "Focus", Icon: IconTimer },
+  { href: "/reflect", label: "Reflect", Icon: IconJournal },
+  { href: "/you", label: "You", Icon: IconUser },
 ] as const;
 
 export function TabBar() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-sand-stone/30 px-2 pb-safe">
+    <nav className="tab-bar">
       <div className="flex justify-around items-center max-w-lg mx-auto h-16">
         {tabs.map((tab) => {
           const isActive = pathname.startsWith(tab.href);
@@ -23,14 +25,40 @@ export function TabBar() {
             <Link
               key={tab.href}
               href={tab.href}
-              className={`flex flex-col items-center justify-center w-16 h-full transition-colors ${
-                isActive
-                  ? "text-amber-warm"
-                  : "text-sand-stone hover:text-slate-deep"
-              }`}
+              className="flex flex-col items-center justify-center w-16 h-full relative group"
             >
-              <span className="text-xl mb-0.5">{tab.icon}</span>
-              <span className="text-[10px] font-medium">{tab.label}</span>
+              <motion.div
+                className="flex flex-col items-center"
+                animate={{
+                  y: isActive ? -2 : 0,
+                }}
+                transition={{ type: "spring", stiffness: 400, damping: 25 }}
+              >
+                <tab.Icon
+                  size={22}
+                  color={isActive ? "#E8985E" : "#C4A882"}
+                  className={`transition-colors duration-300 ${
+                    !isActive ? "group-hover:stroke-slate-deep" : ""
+                  }`}
+                />
+                <span
+                  className={`text-[10px] font-medium mt-1 transition-colors duration-300 ${
+                    isActive
+                      ? "text-amber-warm"
+                      : "text-sand-stone group-hover:text-slate-deep"
+                  }`}
+                >
+                  {tab.label}
+                </span>
+              </motion.div>
+              {/* Active indicator dot */}
+              {isActive && (
+                <motion.div
+                  layoutId="tab-indicator"
+                  className="absolute -bottom-0 w-5 h-0.5 rounded-full bg-amber-warm"
+                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                />
+              )}
             </Link>
           );
         })}

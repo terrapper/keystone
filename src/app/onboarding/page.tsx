@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSupabase } from "@/components/providers/supabase-provider";
+import { IconSunrise, IconSun, IconMoon, IconCheck } from "@/components/ui/icons";
 import type { Habit } from "@/lib/types/database";
 
 const GOALS = [
@@ -16,16 +17,26 @@ const GOALS = [
 ] as const;
 
 const TIME_BLOCKS = [
-  { id: "morning" as const, label: "Morning", emoji: "🌅", desc: "Start your day right" },
-  { id: "afternoon" as const, label: "Afternoon", emoji: "☀️", desc: "Midday recharge" },
-  { id: "evening" as const, label: "Evening", emoji: "🌙", desc: "Wind down well" },
+  { id: "morning" as const, label: "Morning", Icon: IconSunrise, desc: "Start your day right" },
+  { id: "afternoon" as const, label: "Afternoon", Icon: IconSun, desc: "Midday recharge" },
+  { id: "evening" as const, label: "Evening", Icon: IconMoon, desc: "Wind down well" },
 ] as const;
 
 const slideVariants = {
-  enter: { opacity: 0, x: 60 },
-  center: { opacity: 1, x: 0 },
-  exit: { opacity: 0, x: -60 },
+  enter: { opacity: 0, x: 80, scale: 0.97 },
+  center: { opacity: 1, x: 0, scale: 1 },
+  exit: { opacity: 0, x: -80, scale: 0.97 },
 };
+
+const GRADIENTS = [
+  "linear-gradient(160deg, #F5F0EB 0%, #F0E6D9 30%, #EDE0D0 100%)",
+  "linear-gradient(160deg, #F5F0EB 0%, #EFE8DF 50%, #E8DED0 100%)",
+  "linear-gradient(160deg, #F5F0EB 0%, #E8E2D8 30%, #F0E6D9 100%)",
+  "linear-gradient(160deg, #F5F0EB 0%, #EDE4D8 40%, #F2EBE0 100%)",
+  "linear-gradient(160deg, #F5F0EB 0%, #EBE3D6 30%, #EDE0D0 100%)",
+  "linear-gradient(160deg, #F5F0EB 0%, #F0E8DC 30%, #E8DFD0 100%)",
+  "linear-gradient(160deg, #EDF5EA 0%, #F0E6D9 50%, #F5F0EB 100%)",
+];
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -58,7 +69,6 @@ export default function OnboardingPage() {
       if (data && data.length > 0) {
         setStarterHabits(data);
       } else {
-        // Fallback: get any 4 default habits
         const { data: fallback } = await supabase
           .from("habits")
           .select("*")
@@ -98,7 +108,6 @@ export default function OnboardingPage() {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Update profile
       await supabase.from("profiles").upsert({
         id: user.id,
         display_name: displayName || "Friend",
@@ -107,7 +116,6 @@ export default function OnboardingPage() {
         onboarding_selections: goals,
       });
 
-      // Create routines for selected time blocks
       for (const block of activeBlocks) {
         let startTime = "07:00";
         if (block === "morning") startTime = wakeTime;
@@ -125,7 +133,6 @@ export default function OnboardingPage() {
           .select()
           .single();
 
-        // Add selected habit to morning routine
         if (routine && block === "morning" && selectedHabit) {
           await supabase.from("routine_habits").insert({
             routine_id: routine.id,
@@ -136,7 +143,6 @@ export default function OnboardingPage() {
         }
       }
 
-      // Create initial streak record
       await supabase.from("streaks").insert({
         user_id: user.id,
         current_streak: 0,
@@ -161,20 +167,28 @@ export default function OnboardingPage() {
       initial="enter"
       animate="center"
       exit="exit"
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      transition={{ type: "spring", stiffness: 260, damping: 25 }}
       className="flex flex-col items-center text-center min-h-[70vh] justify-center"
     >
-      <div className="w-20 h-20 bg-amber-warm rounded-keystone mx-auto mb-6 flex items-center justify-center shadow-lg">
-        <span className="text-white font-display text-3xl font-bold">K</span>
-      </div>
-      <h1 className="font-display text-3xl text-slate-deep font-bold mb-3">
+      <motion.div
+        initial={{ scale: 0.5, opacity: 0, rotate: -10 }}
+        animate={{ scale: 1, opacity: 1, rotate: 0 }}
+        transition={{ type: "spring", stiffness: 200, damping: 15, delay: 0.2 }}
+        className="w-24 h-24 mx-auto mb-8 flex items-center justify-center rounded-[24px]"
+        style={{
+          background: "linear-gradient(135deg, #E8985E 0%, #D4764E 100%)",
+          boxShadow: "0 8px 32px rgba(232, 152, 94, 0.3), 0 0 64px rgba(232, 152, 94, 0.1)",
+        }}
+      >
+        <span className="text-white font-display text-4xl font-bold">K</span>
+      </motion.div>
+      <h1 className="font-display text-4xl text-slate-deep font-bold mb-3 tracking-tight">
         Hey. This is Keystone.
       </h1>
       <p className="text-sand-stone text-lg max-w-xs leading-relaxed">
-        A small app to help you build routines that actually stick.
-        One habit at a time.
+        A small app to help you build routines that actually stick. One habit at a time.
       </p>
-      <div className="mt-12 w-full max-w-xs">
+      <div className="mt-14 w-full max-w-xs">
         <button onClick={next} className="btn-primary w-full text-lg">
           Let&apos;s go
         </button>
@@ -188,13 +202,16 @@ export default function OnboardingPage() {
       initial="enter"
       animate="center"
       exit="exit"
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      transition={{ type: "spring", stiffness: 260, damping: 25 }}
       className="flex flex-col min-h-[70vh] justify-center"
     >
-      <h1 className="font-display text-2xl text-slate-deep font-bold mb-2">
+      <div className="text-center mb-2">
+        <span className="text-6xl block mb-4">&#x1F44B;</span>
+      </div>
+      <h1 className="font-display text-3xl text-slate-deep font-bold mb-2 tracking-tight">
         First, a little about you.
       </h1>
-      <p className="text-sand-stone mb-8">Just the basics.</p>
+      <p className="text-sand-stone mb-8 text-base">Just the basics.</p>
 
       <div className="space-y-6">
         <div>
@@ -206,9 +223,7 @@ export default function OnboardingPage() {
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="Your name"
-            className="w-full px-4 py-3 rounded-keystone border border-sand-stone/50 bg-white
-                       text-slate-deep placeholder:text-sand-stone/60 focus:outline-none
-                       focus:ring-2 focus:ring-amber-warm/50 font-body"
+            className="input-keystone"
           />
         </div>
         <div>
@@ -219,8 +234,7 @@ export default function OnboardingPage() {
             type="time"
             value={wakeTime}
             onChange={(e) => setWakeTime(e.target.value)}
-            className="w-full px-4 py-3 rounded-keystone border border-sand-stone/50 bg-white
-                       text-slate-deep focus:outline-none focus:ring-2 focus:ring-amber-warm/50 font-body"
+            className="input-keystone"
           />
         </div>
       </div>
@@ -246,13 +260,16 @@ export default function OnboardingPage() {
       initial="enter"
       animate="center"
       exit="exit"
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      transition={{ type: "spring", stiffness: 260, damping: 25 }}
       className="flex flex-col min-h-[70vh] justify-center"
     >
-      <h1 className="font-display text-2xl text-slate-deep font-bold mb-2">
+      <div className="text-center mb-2">
+        <span className="text-6xl block mb-4">&#x1F3AF;</span>
+      </div>
+      <h1 className="font-display text-3xl text-slate-deep font-bold mb-2 tracking-tight">
         What&apos;s pulling you here?
       </h1>
-      <p className="text-sand-stone mb-8">Pick as many as feel right.</p>
+      <p className="text-sand-stone mb-8 text-base">Pick as many as feel right.</p>
 
       <div className="flex flex-wrap gap-3">
         {GOALS.map((goal) => {
@@ -260,13 +277,9 @@ export default function OnboardingPage() {
           return (
             <motion.button
               key={goal}
-              whileTap={{ scale: 0.95 }}
+              whileTap={{ scale: 0.93 }}
               onClick={() => toggleGoal(goal)}
-              className={`px-5 py-2.5 rounded-full text-sm font-medium transition-all duration-200 border ${
-                isSelected
-                  ? "bg-amber-warm text-white border-amber-warm shadow-sm"
-                  : "bg-white text-slate-deep border-sand-stone/40 hover:border-amber-warm/60"
-              }`}
+              className={`chip ${isSelected ? "active" : ""}`}
             >
               {goal}
             </motion.button>
@@ -295,13 +308,16 @@ export default function OnboardingPage() {
       initial="enter"
       animate="center"
       exit="exit"
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      transition={{ type: "spring", stiffness: 260, damping: 25 }}
       className="flex flex-col min-h-[70vh] justify-center"
     >
-      <h1 className="font-display text-2xl text-slate-deep font-bold mb-2">
+      <div className="text-center mb-2">
+        <span className="text-6xl block mb-4">&#x2728;</span>
+      </div>
+      <h1 className="font-display text-3xl text-slate-deep font-bold mb-2 tracking-tight">
         Your first keystone.
       </h1>
-      <p className="text-sand-stone mb-8">
+      <p className="text-sand-stone mb-8 text-base">
         Pick one small thing to do when you wake up tomorrow. Just one.
       </p>
 
@@ -313,13 +329,21 @@ export default function OnboardingPage() {
               key={habit.id}
               whileTap={{ scale: 0.98 }}
               onClick={() => setSelectedHabit(habit.id)}
-              className={`w-full text-left card-keystone flex items-center gap-4 transition-all duration-200 ${
+              className={`w-full text-left card-keystone flex items-center gap-4 transition-all duration-300 ${
                 isSelected
-                  ? "border-amber-warm ring-2 ring-amber-warm/30 bg-amber-warm/5"
-                  : "hover:border-sand-stone/60"
+                  ? "!border-amber-warm ring-2 ring-amber-warm/20"
+                  : ""
               }`}
+              style={isSelected ? {
+                background: "linear-gradient(135deg, rgba(232, 152, 94, 0.06) 0%, rgba(232, 152, 94, 0.02) 100%)",
+                boxShadow: "var(--shadow-card), 0 0 0 2px rgba(232, 152, 94, 0.15)",
+              } : undefined}
             >
-              <span className="text-2xl">{habit.icon}</span>
+              <div className={`w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300 ${
+                isSelected ? "bg-amber-warm/15" : "bg-white-warm"
+              }`}>
+                <span className="text-2xl">{habit.icon}</span>
+              </div>
               <div className="flex-1">
                 <div className="font-medium text-slate-deep">{habit.name}</div>
                 <div className="text-sm text-sand-stone">{habit.description}</div>
@@ -328,9 +352,14 @@ export default function OnboardingPage() {
                 <motion.div
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  className="w-6 h-6 bg-amber-warm rounded-full flex items-center justify-center"
+                  transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                  className="w-7 h-7 rounded-full flex items-center justify-center"
+                  style={{
+                    background: "linear-gradient(135deg, #E8985E 0%, #D4764E 100%)",
+                    boxShadow: "0 2px 8px rgba(232, 152, 94, 0.3)",
+                  }}
                 >
-                  <span className="text-white text-sm">✓</span>
+                  <IconCheck size={14} color="white" />
                 </motion.div>
               )}
             </motion.button>
@@ -359,13 +388,16 @@ export default function OnboardingPage() {
       initial="enter"
       animate="center"
       exit="exit"
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      transition={{ type: "spring", stiffness: 260, damping: 25 }}
       className="flex flex-col min-h-[70vh] justify-center"
     >
-      <h1 className="font-display text-2xl text-slate-deep font-bold mb-2">
+      <div className="text-center mb-2">
+        <span className="text-6xl block mb-4">&#x23F0;</span>
+      </div>
+      <h1 className="font-display text-3xl text-slate-deep font-bold mb-2 tracking-tight">
         Set your rhythm.
       </h1>
-      <p className="text-sand-stone mb-8">
+      <p className="text-sand-stone mb-8 text-base">
         When do you want Keystone to show up for you?
       </p>
 
@@ -377,26 +409,29 @@ export default function OnboardingPage() {
               key={block.id}
               whileTap={{ scale: 0.98 }}
               onClick={() => toggleBlock(block.id)}
-              className={`w-full text-left card-keystone flex items-center gap-4 transition-all duration-200 ${
-                isActive
-                  ? "border-amber-warm ring-2 ring-amber-warm/30 bg-amber-warm/5"
-                  : "hover:border-sand-stone/60"
+              className={`w-full text-left card-keystone flex items-center gap-4 transition-all duration-300 ${
+                isActive ? "!border-amber-warm ring-2 ring-amber-warm/20" : ""
               }`}
+              style={isActive ? {
+                background: "linear-gradient(135deg, rgba(232, 152, 94, 0.06) 0%, rgba(232, 152, 94, 0.02) 100%)",
+              } : undefined}
             >
-              <span className="text-2xl">{block.emoji}</span>
+              <div className={`w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300 ${
+                isActive ? "bg-amber-warm/15" : "bg-white-warm"
+              }`}>
+                <block.Icon size={22} color={isActive ? "#E8985E" : "#C4A882"} />
+              </div>
               <div className="flex-1">
                 <div className="font-medium text-slate-deep">{block.label}</div>
                 <div className="text-sm text-sand-stone">{block.desc}</div>
               </div>
               <div
-                className={`w-10 h-6 rounded-full transition-colors duration-200 relative ${
-                  isActive ? "bg-amber-warm" : "bg-sand-stone/30"
-                }`}
+                className={`toggle-track ${isActive ? "bg-amber-warm" : "bg-sand-stone/25"}`}
               >
-                <div
-                  className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${
-                    isActive ? "translate-x-4.5" : "translate-x-0.5"
-                  }`}
+                <motion.div
+                  animate={{ x: isActive ? 22 : 2 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  className="toggle-thumb"
                 />
               </div>
             </motion.button>
@@ -425,15 +460,18 @@ export default function OnboardingPage() {
       initial="enter"
       animate="center"
       exit="exit"
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      transition={{ type: "spring", stiffness: 260, damping: 25 }}
       className="flex flex-col min-h-[70vh] justify-center"
     >
-      <h1 className="font-display text-2xl text-slate-deep font-bold mb-2">
+      <div className="text-center mb-2">
+        <span className="text-6xl block mb-4">&#x1F514;</span>
+      </div>
+      <h1 className="font-display text-3xl text-slate-deep font-bold mb-2 tracking-tight">
         Stay in the loop.
       </h1>
-      <p className="text-sand-stone mb-8">
-        We can send you a gentle nudge when it&apos;s time for your routine.
-        You can always change this later.
+      <p className="text-sand-stone mb-8 text-base">
+        We can send you a gentle nudge when it&apos;s time for your routine. You
+        can always change this later.
       </p>
 
       <div>
@@ -445,11 +483,9 @@ export default function OnboardingPage() {
           value={phoneNumber}
           onChange={(e) => setPhoneNumber(e.target.value)}
           placeholder="+1 (555) 123-4567"
-          className="w-full px-4 py-3 rounded-keystone border border-sand-stone/50 bg-white
-                     text-slate-deep placeholder:text-sand-stone/60 focus:outline-none
-                     focus:ring-2 focus:ring-amber-warm/50 font-body"
+          className="input-keystone"
         />
-        <p className="text-xs text-sand-stone mt-2">
+        <p className="text-xs text-sand-stone mt-3">
           We&apos;ll adapt to your rhythm over time. No spam, ever.
         </p>
       </div>
@@ -471,18 +507,22 @@ export default function OnboardingPage() {
       initial="enter"
       animate="center"
       exit="exit"
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      transition={{ type: "spring", stiffness: 260, damping: 25 }}
       className="flex flex-col items-center text-center min-h-[70vh] justify-center"
     >
       <motion.div
-        initial={{ scale: 0.5, opacity: 0 }}
+        initial={{ scale: 0.3, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        transition={{ type: "spring", stiffness: 200, damping: 20, delay: 0.2 }}
-        className="w-20 h-20 bg-green-sage rounded-full flex items-center justify-center mb-6 shadow-lg"
+        transition={{ type: "spring", stiffness: 200, damping: 15, delay: 0.2 }}
+        className="w-24 h-24 rounded-full flex items-center justify-center mb-8"
+        style={{
+          background: "linear-gradient(135deg, #7B9E6B 0%, #5C8A4A 100%)",
+          boxShadow: "0 8px 32px rgba(123, 158, 107, 0.3), 0 0 64px rgba(123, 158, 107, 0.1)",
+        }}
       >
-        <span className="text-white text-3xl">✓</span>
+        <IconCheck size={40} color="white" />
       </motion.div>
-      <h1 className="font-display text-3xl text-slate-deep font-bold mb-3">
+      <h1 className="font-display text-4xl text-slate-deep font-bold mb-3 tracking-tight">
         You&apos;re in.
       </h1>
       <p className="text-sand-stone text-lg max-w-xs leading-relaxed mb-2">
@@ -490,17 +530,23 @@ export default function OnboardingPage() {
         {displayName && ` See you tomorrow at ${wakeTime}, ${displayName}.`}
       </p>
       {selectedHabit && starterHabits.find((h) => h.id === selectedHabit) && (
-        <div className="card-keystone mt-4 text-left inline-flex items-center gap-3 px-5 py-3">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="card-keystone mt-4 text-left inline-flex items-center gap-3 px-5 py-3"
+          style={{ boxShadow: "var(--shadow-card)" }}
+        >
           <span className="text-xl">
             {starterHabits.find((h) => h.id === selectedHabit)?.icon}
           </span>
           <span className="font-medium text-slate-deep">
             {starterHabits.find((h) => h.id === selectedHabit)?.name}
           </span>
-        </div>
+        </motion.div>
       )}
 
-      <div className="mt-12 w-full max-w-xs">
+      <div className="mt-14 w-full max-w-xs">
         <button
           onClick={finishOnboarding}
           disabled={loading}
@@ -513,19 +559,26 @@ export default function OnboardingPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-white-warm px-6 py-8">
+    <div
+      className="min-h-screen px-6 py-8"
+      style={{ background: GRADIENTS[step] || GRADIENTS[0] }}
+    >
       {/* Progress dots */}
       <div className="flex justify-center gap-2 mb-8">
         {steps.map((_, i) => (
-          <div
+          <motion.div
             key={i}
-            className={`w-2 h-2 rounded-full transition-all duration-300 ${
-              i === step
-                ? "bg-amber-warm w-6"
-                : i < step
-                ? "bg-amber-warm/40"
-                : "bg-sand-stone/30"
-            }`}
+            animate={{
+              width: i === step ? 28 : 8,
+              backgroundColor:
+                i === step
+                  ? "#E8985E"
+                  : i < step
+                  ? "rgba(232, 152, 94, 0.35)"
+                  : "rgba(196, 168, 130, 0.25)",
+            }}
+            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+            className="h-2 rounded-full"
           />
         ))}
       </div>

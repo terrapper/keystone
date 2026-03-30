@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSupabase } from "@/components/providers/supabase-provider";
+import { IconCheck, IconChart } from "@/components/ui/icons";
 import type { Reflection } from "@/lib/types/database";
 
 const reflectionPrompts = [
@@ -27,32 +28,19 @@ function formatDate(dateStr: string): string {
   today.setHours(0, 0, 0, 0);
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-
   const d = new Date(dateStr + "T00:00:00");
   d.setHours(0, 0, 0, 0);
-
   if (d.getTime() === today.getTime()) return "Today";
   if (d.getTime() === yesterday.getTime()) return "Yesterday";
-
-  return date.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+  return date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 }
 
-type TypeBadge = { label: string; color: string };
+type TypeBadge = { label: string; color: string; bg: string };
 const typeBadges: Record<string, TypeBadge> = {
-  gratitude: { label: "Gratitude", color: "bg-amber-warm/10 text-amber-warm" },
-  reflection: {
-    label: "Reflection",
-    color: "bg-indigo-soft/10 text-indigo-soft",
-  },
-  letter: { label: "Letter", color: "bg-green-sage/10 text-green-sage" },
-  weekly_review: {
-    label: "Weekly Review",
-    color: "bg-[#9B6FA8]/10 text-[#9B6FA8]",
-  },
+  gratitude: { label: "Gratitude", color: "text-amber-warm", bg: "bg-amber-warm/8" },
+  reflection: { label: "Reflection", color: "text-indigo-soft", bg: "bg-indigo-soft/8" },
+  letter: { label: "Letter", color: "text-green-sage", bg: "bg-green-sage/8" },
+  weekly_review: { label: "Weekly Review", color: "text-[#9B6FA8]", bg: "bg-[#9B6FA8]/8" },
 };
 
 export default function ReflectPage() {
@@ -72,141 +60,79 @@ export default function ReflectPage() {
   const today = new Date().toISOString().split("T")[0];
 
   const loadData = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setUserId(user.id);
-
-    const { data } = await supabase
-      .from("reflections")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("date", { ascending: false })
-      .order("created_at", { ascending: false });
-
+    const { data } = await supabase.from("reflections").select("*").eq("user_id", user.id).order("date", { ascending: false }).order("created_at", { ascending: false });
     if (data) {
       setReflections(data);
-
-      // Check if already submitted today
-      const todayGratitude = data.find(
-        (r) => r.date === today && r.type === "gratitude"
-      );
-      const todayReflection = data.find(
-        (r) => r.date === today && r.type === "reflection"
-      );
-      if (todayGratitude) setSavedGratitude(true);
-      if (todayReflection) setSavedReflection(true);
+      if (data.find((r) => r.date === today && r.type === "gratitude")) setSavedGratitude(true);
+      if (data.find((r) => r.date === today && r.type === "reflection")) setSavedReflection(true);
     }
-
     setLoading(false);
   }, [supabase, today]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData]);
 
   async function saveEntry(type: "gratitude" | "reflection", content: string) {
     if (!userId || !content.trim()) return;
-
     const setter = type === "gratitude" ? setSavingGratitude : setSavingReflection;
     setter(true);
-
-    const { data } = await supabase
-      .from("reflections")
-      .insert({
-        user_id: userId,
-        date: today,
-        type,
-        content: content.trim(),
-      })
-      .select()
-      .single();
-
+    const { data } = await supabase.from("reflections").insert({ user_id: userId, date: today, type, content: content.trim() }).select().single();
     if (data) {
       setReflections((prev) => [data, ...prev]);
-      if (type === "gratitude") {
-        setGratitudeText("");
-        setSavedGratitude(true);
-      } else {
-        setReflectionText("");
-        setSavedReflection(true);
-      }
+      if (type === "gratitude") { setGratitudeText(""); setSavedGratitude(true); }
+      else { setReflectionText(""); setSavedReflection(true); }
     }
-
     setter(false);
   }
 
-  // Group reflections by date
-  const grouped = reflections.reduce<Record<string, Reflection[]>>(
-    (acc, ref) => {
-      if (!acc[ref.date]) acc[ref.date] = [];
-      acc[ref.date].push(ref);
-      return acc;
-    },
-    {}
-  );
+  const grouped = reflections.reduce<Record<string, Reflection[]>>((acc, ref) => {
+    if (!acc[ref.date]) acc[ref.date] = [];
+    acc[ref.date].push(ref);
+    return acc;
+  }, {});
 
-  const dates = Object.keys(grouped).sort(
-    (a, b) => new Date(b).getTime() - new Date(a).getTime()
-  );
+  const dates = Object.keys(grouped).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
 
   if (loading) {
     return (
       <div className="animate-pulse space-y-4 pt-4">
-        <div className="h-8 bg-sand-stone/20 rounded w-1/3" />
-        <div className="h-24 bg-sand-stone/20 rounded-keystone" />
-        <div className="h-24 bg-sand-stone/20 rounded-keystone" />
+        <div className="h-8 bg-sand-stone/15 rounded-keystone w-1/3" />
+        <div className="h-28 bg-sand-stone/10 rounded-keystone" />
+        <div className="h-28 bg-sand-stone/10 rounded-keystone" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="font-display text-2xl text-slate-deep font-bold">
-        Reflect
-      </h1>
+      <h1 className="font-display text-3xl text-slate-deep font-bold tracking-tight">Reflect</h1>
 
       {/* Gratitude prompt */}
-      <div className="card-keystone">
-        <h3 className="font-display text-sm text-amber-warm font-semibold uppercase tracking-wider mb-2">
-          Daily Gratitude
-        </h3>
+      <div className="journal-card">
+        <h3 className="section-label !text-amber-warm">Daily Gratitude</h3>
         {savedGratitude ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex items-center gap-2 text-green-sage"
-          >
-            <span>✓</span>
-            <span className="text-sm font-medium">
-              Gratitude captured for today
-            </span>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-green-sage">
+            <IconCheck size={16} />
+            <span className="text-sm font-medium">Gratitude captured for today</span>
           </motion.div>
         ) : (
           <>
-            <p className="text-sm text-sand-stone mb-3">
-              Name one thing from today.
-            </p>
+            <p className="text-sm text-sand-stone mb-3">Name one thing from today.</p>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={gratitudeText}
                 onChange={(e) => setGratitudeText(e.target.value)}
                 placeholder="I'm grateful for..."
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && gratitudeText.trim()) {
-                    saveEntry("gratitude", gratitudeText);
-                  }
-                }}
-                className="flex-1 px-4 py-2.5 rounded-keystone border border-sand-stone/50 bg-white
-                           text-slate-deep placeholder:text-sand-stone/60 focus:outline-none
-                           focus:ring-2 focus:ring-amber-warm/50 font-body text-sm"
+                onKeyDown={(e) => { if (e.key === "Enter" && gratitudeText.trim()) saveEntry("gratitude", gratitudeText); }}
+                className="input-keystone flex-1 text-sm"
               />
               <button
                 onClick={() => saveEntry("gratitude", gratitudeText)}
                 disabled={!gratitudeText.trim() || savingGratitude}
-                className="btn-primary py-2 px-4 text-sm disabled:opacity-40"
+                className="btn-primary py-2.5 px-5 text-sm disabled:opacity-40"
               >
                 {savingGratitude ? "..." : "Save"}
               </button>
@@ -216,32 +142,22 @@ export default function ReflectPage() {
       </div>
 
       {/* Reflection prompt */}
-      <div className="card-keystone">
-        <h3 className="font-display text-sm text-indigo-soft font-semibold uppercase tracking-wider mb-2">
-          Daily Reflection
-        </h3>
+      <div className="journal-card">
+        <h3 className="section-label !text-indigo-soft">Daily Reflection</h3>
         {savedReflection ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex items-center gap-2 text-green-sage"
-          >
-            <span>✓</span>
-            <span className="text-sm font-medium">
-              Reflection captured for today
-            </span>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-green-sage">
+            <IconCheck size={16} />
+            <span className="text-sm font-medium">Reflection captured for today</span>
           </motion.div>
         ) : (
           <>
-            <p className="text-sm text-sand-stone mb-3">{adaptivePrompt}</p>
+            <p className="text-sm text-sand-stone mb-3 italic">{adaptivePrompt}</p>
             <textarea
               value={reflectionText}
               onChange={(e) => setReflectionText(e.target.value)}
               placeholder="Take a moment to reflect..."
               rows={3}
-              className="w-full px-4 py-3 rounded-keystone border border-sand-stone/50 bg-white
-                         text-slate-deep placeholder:text-sand-stone/60 focus:outline-none
-                         focus:ring-2 focus:ring-indigo-soft/50 font-body text-sm resize-none"
+              className="input-keystone text-sm resize-none"
             />
             <button
               onClick={() => saveEntry("reflection", reflectionText)}
@@ -255,28 +171,22 @@ export default function ReflectPage() {
       </div>
 
       {/* Weekly review placeholder */}
-      <div className="card-keystone border-dashed border-sand-stone/40 text-center py-5">
-        <span className="text-2xl mb-2 block">📊</span>
-        <h3 className="font-display text-sm text-slate-deep font-semibold">
-          Weekly Review
-        </h3>
-        <p className="text-xs text-sand-stone mt-1">
-          Coming soon — check back Sunday
-        </p>
+      <div className="card-keystone text-center py-6" style={{ borderStyle: "dashed", borderColor: "rgba(196, 168, 130, 0.3)" }}>
+        <div className="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ background: "rgba(196, 168, 130, 0.08)" }}>
+          <IconChart size={22} color="#C4A882" />
+        </div>
+        <h3 className="font-display text-sm text-slate-deep font-semibold">Weekly Review</h3>
+        <p className="text-xs text-sand-stone mt-1">Coming soon -- check back Sunday</p>
       </div>
 
       {/* Journal entries */}
       {dates.length > 0 && (
         <div>
-          <h2 className="font-display text-sm text-slate-deep font-semibold uppercase tracking-wider mb-3">
-            Journal
-          </h2>
-          <div className="space-y-4">
+          <p className="section-label">Journal</p>
+          <div className="space-y-5">
             {dates.map((date) => (
               <div key={date}>
-                <h3 className="text-xs text-sand-stone font-medium mb-2">
-                  {formatDate(date)}
-                </h3>
+                <h3 className="text-xs text-sand-stone font-medium mb-2.5">{formatDate(date)}</h3>
                 <div className="space-y-2">
                   {grouped[date].map((entry) => {
                     const badge = typeBadges[entry.type] || typeBadges.reflection;
@@ -286,22 +196,14 @@ export default function ReflectPage() {
                       <motion.button
                         key={entry.id}
                         layout
-                        onClick={() =>
-                          setExpandedId(isExpanded ? null : entry.id)
-                        }
-                        className="w-full text-left card-keystone"
+                        onClick={() => setExpandedId(isExpanded ? null : entry.id)}
+                        className="w-full text-left journal-card"
                       >
-                        <div className="flex items-start gap-2">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${badge.color}`}
-                          >
+                        <div className="flex items-start gap-2.5">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${badge.bg} ${badge.color}`}>
                             {badge.label}
                           </span>
-                          <p
-                            className={`text-sm text-slate-deep/90 leading-relaxed ${
-                              isExpanded ? "" : "line-clamp-2"
-                            }`}
-                          >
+                          <p className={`text-sm text-slate-deep/85 leading-[1.7] ${isExpanded ? "" : "line-clamp-2"}`}>
                             {entry.content}
                           </p>
                         </div>
