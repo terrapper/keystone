@@ -1,26 +1,66 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Zilla+Slab:wght@400;500;600;700&display=swap');
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* Keystone Color Palette */
+  --color-slate-deep: #2D3047;
+  --color-amber-warm: #E8985E;
+  --color-green-sage: #7B9E6B;
+  --color-sand-stone: #C4A882;
+  --color-indigo-soft: #6B7FD7;
+  --color-white-warm: #F5F0EB;
+
+  /* Typography */
+  --font-display: "Zilla Slab", serif;
+  --font-body: "Inter", sans-serif;
+
+  /* Border Radius */
+  --radius-keystone: 12px;
+
+  /* Animations */
+  --animate-check-draw: checkDraw 300ms ease-out forwards;
+  --animate-ember-glow: emberGlow 2s ease-in-out infinite;
+  --animate-fade-in: fadeIn 200ms ease-out;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+@keyframes checkDraw {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@keyframes emberGlow {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+@keyframes fadeIn {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@layer base {
+  body {
+    @apply bg-white-warm text-slate-deep font-body;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-display;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  .btn-primary {
+    @apply bg-amber-warm text-white font-display font-semibold px-6 py-3 rounded-keystone
+           transition-all duration-200 hover:brightness-110 active:scale-[0.98];
+  }
+
+  .btn-secondary {
+    @apply bg-transparent border-2 border-sand-stone text-slate-deep font-display font-semibold
+           px-6 py-3 rounded-keystone transition-all duration-200 hover:bg-sand-stone/20;
+  }
+
+  .card-keystone {
+    @apply bg-white rounded-keystone shadow-sm border border-sand-stone/30 p-4
+           transition-all duration-200;
+  }
 }
