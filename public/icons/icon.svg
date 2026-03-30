@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="64" fill="#2D3047"/>
+  <path d="M176 400 L144 112 Q140 88 168 80 L240 56 Q256 52 272 56 L344 80 Q372 88 368 112 L336 400 Q332 416 320 416 L192 416 Q180 416 176 400Z" fill="#E8985E"/>
+  <text x="256" y="300" text-anchor="middle" font-family="serif" font-size="180" font-weight="bold" fill="#2D3047">K</text>
+</svg>
