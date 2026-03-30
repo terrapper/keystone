@@ -112,9 +112,28 @@ export default function TodayPage() {
     );
   }
 
-  async function completeHabit(routineHabitId: string) {
-    if (!userId || isCompleted(routineHabitId) || isSkipped(routineHabitId)) return;
+  async function toggleHabit(routineHabitId: string) {
+    if (!userId) return;
 
+    const existing = completions.find((c) => c.routine_habit_id === routineHabitId);
+
+    if (existing) {
+      // Uncomplete: delete the completion record
+      const { error } = await supabase
+        .from("habit_completions")
+        .delete()
+        .eq("id", existing.id);
+
+      if (!error) {
+        setCompletions((prev) => prev.filter((c) => c.id !== existing.id));
+        // Update streak after removing completion
+        const updatedStreak = await updateStreak(supabase, userId);
+        if (updatedStreak) setStreak(updatedStreak);
+      }
+      return;
+    }
+
+    // Complete: insert a new completion record
     const { data } = await supabase
       .from("habit_completions")
       .insert({
@@ -138,7 +157,24 @@ export default function TodayPage() {
   }
 
   async function skipHabit(routineHabitId: string, note: string) {
-    if (!userId || isCompleted(routineHabitId) || isSkipped(routineHabitId)) return;
+    if (!userId) return;
+
+    const existing = completions.find((c) => c.routine_habit_id === routineHabitId);
+
+    if (existing) {
+      // Already has a completion record — delete it (un-skip)
+      const { error } = await supabase
+        .from("habit_completions")
+        .delete()
+        .eq("id", existing.id);
+
+      if (!error) {
+        setCompletions((prev) => prev.filter((c) => c.id !== existing.id));
+      }
+      setSkipNoteFor(null);
+      setSkipNote("");
+      return;
+    }
 
     const { data } = await supabase
       .from("habit_completions")
@@ -161,7 +197,6 @@ export default function TodayPage() {
   }
 
   function handlePointerDown(routineHabitId: string) {
-    if (isCompleted(routineHabitId) || isSkipped(routineHabitId)) return;
     const timer = setTimeout(() => {
       setSkipNoteFor(routineHabitId);
     }, 500);
@@ -306,7 +341,7 @@ export default function TodayPage() {
                       ? "bg-sand-stone/10 border-sand-stone/30 opacity-60"
                       : "active:scale-[0.98]"
                   }`}
-                  onClick={() => !done && completeHabit(rh.id)}
+                  onClick={() => toggleHabit(rh.id)}
                   onPointerDown={() => handlePointerDown(rh.id)}
                   onPointerUp={handlePointerUp}
                   onPointerLeave={handlePointerUp}
