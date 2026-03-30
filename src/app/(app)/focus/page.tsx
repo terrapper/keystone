@@ -1,8 +1,514 @@
+"use client";
+
+import { useState, useEffect, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useSupabase } from "@/components/providers/supabase-provider";
+import type { FocusSession } from "@/lib/types/database";
+
+type TimerState = "setup" | "breathing" | "running" | "complete";
+type AmbientSound = "rain" | "cafe" | "forest" | "brown-noise" | "lo-fi" | "none";
+
+const DURATION_PRESETS = [15, 25, 45, 60];
+
+const ambientSounds: { id: AmbientSound; label: string; icon: string }[] = [
+  { id: "none", label: "Silence", icon: "🤫" },
+  { id: "rain", label: "Rain", icon: "🌧️" },
+  { id: "cafe", label: "Cafe", icon: "☕" },
+  { id: "forest", label: "Forest", icon: "🌲" },
+  { id: "brown-noise", label: "Brown Noise", icon: "🔊" },
+  { id: "lo-fi", label: "Lo-fi", icon: "🎵" },
+];
+
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+}
+
+function getEncouragingMessage(
+  duration: number,
+  distractions: number
+): string {
+  if (distractions === 0) {
+    if (duration >= 45)
+      return "Zero distractions in a long session. That's elite focus.";
+    return "Zero distractions. Clean session.";
+  }
+  if (distractions <= 2) {
+    return `${duration} minutes focused, ${distractions} distraction${distractions > 1 ? "s" : ""}. That's a strong session.`;
+  }
+  if (distractions <= 5) {
+    return `${duration} minutes in the chair with ${distractions} distractions noticed. Awareness is the skill.`;
+  }
+  return `${duration} minutes of practice. You noticed ${distractions} distractions — that awareness is what builds focus over time.`;
+}
+
 export default function FocusPage() {
+  const supabase = useSupabase();
+  const [userId, setUserId] = useState<string | null>(null);
+  const [timerState, setTimerState] = useState<TimerState>("setup");
+  const [duration, setDuration] = useState(25);
+  const [ambientSound, setAmbientSound] = useState<AmbientSound>("none");
+  const [breathingEnabled, setBreathingEnabled] = useState(true);
+  const [secondsRemaining, setSecondsRemaining] = useState(0);
+  const [distractionCount, setDistractionCount] = useState(0);
+  const [breathPhase, setBreathPhase] = useState<"inhale" | "hold" | "exhale">("inhale");
+  const [breathSeconds, setBreathSeconds] = useState(0);
+  const [recentSessions, setRecentSessions] = useState<FocusSession[]>([]);
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const breathRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadData = useCallback(async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    setUserId(user.id);
+
+    // Load recent sessions (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const { data } = await supabase
+      .from("focus_sessions")
+      .select("*")
+      .eq("user_id", user.id)
+      .gte("started_at", sevenDaysAgo.toISOString())
+      .order("started_at", { ascending: false });
+
+    if (data) setRecentSessions(data);
+  }, [supabase]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Timer logic
+  useEffect(() => {
+    if (timerState === "running" && secondsRemaining > 0) {
+      timerRef.current = setInterval(() => {
+        setSecondsRemaining((prev) => {
+          if (prev <= 1) {
+            clearInterval(timerRef.current!);
+            setTimerState("complete");
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [timerState, secondsRemaining]);
+
+  // Breathing animation logic
+  useEffect(() => {
+    if (timerState === "breathing") {
+      let elapsed = 0;
+      const totalBreathDuration = 30; // 30 seconds breathing intro
+      // 4s inhale, 4s hold, 4s exhale = 12s cycle
+
+      breathRef.current = setInterval(() => {
+        elapsed++;
+        setBreathSeconds(elapsed);
+
+        const cyclePos = elapsed % 12;
+        if (cyclePos < 4) {
+          setBreathPhase("inhale");
+        } else if (cyclePos < 8) {
+          setBreathPhase("hold");
+        } else {
+          setBreathPhase("exhale");
+        }
+
+        if (elapsed >= totalBreathDuration) {
+          clearInterval(breathRef.current!);
+          // Start the actual timer
+          setTimerState("running");
+          setSecondsRemaining(duration * 60);
+          setSessionStartTime(new Date());
+        }
+      }, 1000);
+    }
+
+    return () => {
+      if (breathRef.current) clearInterval(breathRef.current);
+    };
+  }, [timerState, duration]);
+
+  function startSession() {
+    setDistractionCount(0);
+    if (breathingEnabled) {
+      setTimerState("breathing");
+      setBreathSeconds(0);
+      setBreathPhase("inhale");
+    } else {
+      setTimerState("running");
+      setSecondsRemaining(duration * 60);
+      setSessionStartTime(new Date());
+    }
+  }
+
+  function stopSession() {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (breathRef.current) clearInterval(breathRef.current);
+    setTimerState("setup");
+  }
+
+  function logDistraction() {
+    setDistractionCount((prev) => prev + 1);
+  }
+
+  async function saveSession() {
+    if (!userId || !sessionStartTime) return;
+
+    const actualMinutes = Math.round(
+      (duration * 60 - secondsRemaining) / 60
+    );
+
+    const { data } = await supabase
+      .from("focus_sessions")
+      .insert({
+        user_id: userId,
+        started_at: sessionStartTime.toISOString(),
+        duration_minutes: duration,
+        actual_minutes: actualMinutes || duration,
+        distraction_count: distractionCount,
+        ambient_sound: ambientSound === "none" ? null : ambientSound,
+        completed: true,
+      })
+      .select()
+      .single();
+
+    if (data) {
+      setRecentSessions((prev) => [data, ...prev]);
+    }
+
+    setTimerState("setup");
+  }
+
+  const progress =
+    timerState === "running"
+      ? 1 - secondsRemaining / (duration * 60)
+      : timerState === "complete"
+        ? 1
+        : 0;
+
+  const circumference = 2 * Math.PI * 120;
+
   return (
-    <div>
-      <h1 className="font-display text-2xl text-slate-deep">Focus</h1>
-      <p className="text-sand-stone mt-2">Your deep work timer will appear here.</p>
+    <div className="space-y-6">
+      <h1 className="font-display text-2xl text-slate-deep font-bold">
+        Focus
+      </h1>
+
+      {/* Setup state */}
+      {timerState === "setup" && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="space-y-6"
+        >
+          {/* Duration picker */}
+          <div className="card-keystone">
+            <h3 className="font-display text-sm text-slate-deep font-semibold uppercase tracking-wider mb-3">
+              Duration
+            </h3>
+            <div className="flex gap-2">
+              {DURATION_PRESETS.map((preset) => (
+                <button
+                  key={preset}
+                  onClick={() => setDuration(preset)}
+                  className={`flex-1 py-3 rounded-keystone text-sm font-medium transition-all ${
+                    duration === preset
+                      ? "bg-indigo-soft text-white"
+                      : "bg-sand-stone/10 text-slate-deep hover:bg-sand-stone/20"
+                  }`}
+                >
+                  {preset}m
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Ambient sound selector */}
+          <div className="card-keystone">
+            <h3 className="font-display text-sm text-slate-deep font-semibold uppercase tracking-wider mb-3">
+              Ambient Sound
+            </h3>
+            <div className="grid grid-cols-3 gap-2">
+              {ambientSounds.map((sound) => (
+                <button
+                  key={sound.id}
+                  onClick={() => setAmbientSound(sound.id)}
+                  className={`py-3 rounded-keystone text-sm transition-all flex flex-col items-center gap-1 ${
+                    ambientSound === sound.id
+                      ? "bg-indigo-soft/10 border-2 border-indigo-soft text-slate-deep"
+                      : "bg-sand-stone/10 text-slate-deep border-2 border-transparent"
+                  }`}
+                >
+                  <span className="text-lg">{sound.icon}</span>
+                  <span className="text-xs font-medium">{sound.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Breathing intro toggle */}
+          <div className="card-keystone flex items-center justify-between">
+            <div>
+              <h3 className="font-display text-sm text-slate-deep font-semibold">
+                Breathing Intro
+              </h3>
+              <p className="text-xs text-sand-stone mt-0.5">
+                30-second breathing exercise before timer starts
+              </p>
+            </div>
+            <button
+              onClick={() => setBreathingEnabled(!breathingEnabled)}
+              className={`w-12 h-7 rounded-full transition-all relative ${
+                breathingEnabled ? "bg-indigo-soft" : "bg-sand-stone/30"
+              }`}
+            >
+              <motion.div
+                animate={{ x: breathingEnabled ? 20 : 2 }}
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                className="w-5 h-5 rounded-full bg-white absolute top-1"
+              />
+            </button>
+          </div>
+
+          {/* Start button */}
+          <button onClick={startSession} className="btn-primary w-full text-lg">
+            Start Focus Session
+          </button>
+        </motion.div>
+      )}
+
+      {/* Breathing intro */}
+      {timerState === "breathing" && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex flex-col items-center justify-center min-h-[50vh] space-y-8"
+        >
+          <p className="text-sand-stone text-sm">
+            Breathe with the circle. {30 - breathSeconds}s remaining.
+          </p>
+
+          <div className="relative">
+            <motion.div
+              animate={{
+                scale:
+                  breathPhase === "inhale"
+                    ? [0.6, 1]
+                    : breathPhase === "hold"
+                      ? 1
+                      : [1, 0.6],
+              }}
+              transition={{ duration: 4, ease: "easeInOut" }}
+              className="w-40 h-40 rounded-full bg-indigo-soft/20 border-2 border-indigo-soft flex items-center justify-center"
+            >
+              <span className="text-indigo-soft font-display text-lg font-semibold">
+                {breathPhase === "inhale"
+                  ? "Breathe in"
+                  : breathPhase === "hold"
+                    ? "Hold"
+                    : "Breathe out"}
+              </span>
+            </motion.div>
+          </div>
+
+          <button
+            onClick={() => {
+              if (breathRef.current) clearInterval(breathRef.current);
+              setTimerState("running");
+              setSecondsRemaining(duration * 60);
+              setSessionStartTime(new Date());
+            }}
+            className="text-sand-stone text-sm underline"
+          >
+            Skip breathing
+          </button>
+        </motion.div>
+      )}
+
+      {/* Timer running */}
+      {timerState === "running" && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex flex-col items-center justify-center min-h-[50vh] space-y-8"
+        >
+          {/* Timer circle */}
+          <div className="relative w-64 h-64">
+            <svg className="w-64 h-64 -rotate-90" viewBox="0 0 264 264">
+              <circle
+                cx="132"
+                cy="132"
+                r="120"
+                fill="none"
+                stroke="#C4A882"
+                strokeWidth="6"
+                opacity="0.15"
+              />
+              <motion.circle
+                cx="132"
+                cy="132"
+                r="120"
+                fill="none"
+                stroke="#6B7FD7"
+                strokeWidth="6"
+                strokeLinecap="round"
+                strokeDasharray={circumference}
+                animate={{
+                  strokeDashoffset: circumference * (1 - progress),
+                }}
+                transition={{ duration: 0.5, ease: "linear" }}
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="font-display text-4xl text-slate-deep font-bold tracking-tight">
+                {formatTime(secondsRemaining)}
+              </span>
+              {ambientSound !== "none" && (
+                <span className="text-xs text-sand-stone mt-1">
+                  {ambientSounds.find((s) => s.id === ambientSound)?.icon}{" "}
+                  {ambientSounds.find((s) => s.id === ambientSound)?.label}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Distraction counter */}
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={logDistraction}
+            className="card-keystone flex items-center gap-3 px-6"
+          >
+            <span className="text-xl">🫧</span>
+            <div>
+              <span className="font-medium text-slate-deep text-sm">
+                Distraction
+              </span>
+              <span className="text-xs text-sand-stone ml-2">
+                {distractionCount} logged
+              </span>
+            </div>
+          </motion.button>
+
+          {/* Stop button */}
+          <button
+            onClick={stopSession}
+            className="btn-secondary text-sm px-8"
+          >
+            Stop Session
+          </button>
+        </motion.div>
+      )}
+
+      {/* Session complete */}
+      {timerState === "complete" && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col items-center justify-center min-h-[50vh] space-y-6"
+        >
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+            className="w-20 h-20 rounded-full bg-green-sage/20 flex items-center justify-center"
+          >
+            <span className="text-4xl">✓</span>
+          </motion.div>
+
+          <h2 className="font-display text-2xl text-slate-deep font-bold text-center">
+            Session Complete
+          </h2>
+
+          <div className="card-keystone w-full max-w-sm text-center">
+            <p className="text-slate-deep/90 leading-relaxed font-body">
+              {getEncouragingMessage(duration, distractionCount)}
+            </p>
+            <div className="flex justify-center gap-6 mt-4 pt-4 border-t border-sand-stone/20">
+              <div>
+                <div className="font-display text-xl text-indigo-soft font-bold">
+                  {duration}
+                </div>
+                <div className="text-xs text-sand-stone">minutes</div>
+              </div>
+              <div>
+                <div className="font-display text-xl text-amber-warm font-bold">
+                  {distractionCount}
+                </div>
+                <div className="text-xs text-sand-stone">distractions</div>
+              </div>
+            </div>
+          </div>
+
+          <button onClick={saveSession} className="btn-primary w-full max-w-sm">
+            Save Session
+          </button>
+        </motion.div>
+      )}
+
+      {/* Recent sessions */}
+      {timerState === "setup" && recentSessions.length > 0 && (
+        <div>
+          <h2 className="font-display text-sm text-slate-deep font-semibold uppercase tracking-wider mb-3">
+            Recent Sessions
+          </h2>
+          <div className="space-y-2">
+            {recentSessions.slice(0, 7).map((session) => (
+              <div
+                key={session.id}
+                className="card-keystone flex items-center gap-3 py-3"
+              >
+                <div className="w-10 h-10 rounded-full bg-indigo-soft/10 flex items-center justify-center">
+                  <span className="text-indigo-soft font-display font-bold text-sm">
+                    {session.actual_minutes || session.duration_minutes}m
+                  </span>
+                </div>
+                <div className="flex-1">
+                  <div className="text-sm text-slate-deep font-medium">
+                    {session.actual_minutes || session.duration_minutes} minutes
+                    focused
+                  </div>
+                  <div className="text-xs text-sand-stone">
+                    {new Date(session.started_at).toLocaleDateString("en-US", {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                    {session.ambient_sound && (
+                      <>
+                        {" "}
+                        ·{" "}
+                        {
+                          ambientSounds.find(
+                            (s) => s.id === session.ambient_sound
+                          )?.icon
+                        }{" "}
+                        {session.ambient_sound}
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs text-sand-stone">
+                    {session.distraction_count} distraction
+                    {session.distraction_count !== 1 ? "s" : ""}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

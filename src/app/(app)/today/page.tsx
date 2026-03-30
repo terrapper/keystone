@@ -439,7 +439,7 @@ export default function TodayPage() {
 
       {/* Boost button */}
       <Link
-        href="/focus"
+        href="/journeys?tab=coaching"
         className="block text-center py-3 text-amber-warm font-medium text-sm hover:underline"
       >
         Need a boost? →
