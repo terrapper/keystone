@@ -17,6 +17,10 @@ export interface Profile {
   notification_preferences: Record<TimeOfDay, NotificationMethod>;
   accountability_level: string;
   onboarding_selections: string[];
+  todoist_token: string | null;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+  zen_mode: boolean;
   created_at: string;
   updated_at: string;
 }

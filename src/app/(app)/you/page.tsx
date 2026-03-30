@@ -10,9 +10,11 @@ import type {
   Habit,
   Streak,
   Profile,
+  NotificationMethod,
+  TimeOfDay,
 } from "@/lib/types/database";
 
-type Tab = "routines" | "library";
+type Tab = "routines" | "library" | "settings";
 
 export default function YouPage() {
   const supabase = useSupabase();
@@ -33,6 +35,23 @@ export default function YouPage() {
   const [customDuration, setCustomDuration] = useState(5);
   const [customCategory, setCustomCategory] = useState<string>("productivity");
 
+  // Settings state
+  const [todoistToken, setTodoistToken] = useState("");
+  const [todoistConnected, setTodoistConnected] = useState(false);
+  const [todoistSaving, setTodoistSaving] = useState(false);
+  const [todoistError, setTodoistError] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [notifPrefs, setNotifPrefs] = useState<Record<string, NotificationMethod>>({
+    morning: "off",
+    afternoon: "off",
+    evening: "off",
+  });
+  const [quietHoursStart, setQuietHoursStart] = useState("22:00");
+  const [quietHoursEnd, setQuietHoursEnd] = useState("07:00");
+  const [zenMode, setZenMode] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+
   const ICONS = ["✨", "💪", "🧘", "📖", "🎯", "💧", "🏃", "🧠", "☕", "🌿", "🎵", "✏️"];
   const CATEGORIES = ["focus", "movement", "mindfulness", "nutrition", "sleep", "productivity"];
 
@@ -48,7 +67,24 @@ export default function YouPage() {
       supabase.from("habits").select("*").order("category"),
     ]);
 
-    if (profileRes.data) setProfile(profileRes.data);
+    if (profileRes.data) {
+      setProfile(profileRes.data);
+      // Hydrate settings state from profile
+      setTodoistConnected(!!profileRes.data.todoist_token);
+      setPhoneNumber(profileRes.data.phone_number || "");
+      if (profileRes.data.notification_preferences) {
+        setNotifPrefs(profileRes.data.notification_preferences as Record<string, NotificationMethod>);
+      }
+      if ((profileRes.data as Record<string, unknown>).quiet_hours_start) {
+        setQuietHoursStart((profileRes.data as Record<string, unknown>).quiet_hours_start as string);
+      }
+      if ((profileRes.data as Record<string, unknown>).quiet_hours_end) {
+        setQuietHoursEnd((profileRes.data as Record<string, unknown>).quiet_hours_end as string);
+      }
+      if ((profileRes.data as Record<string, unknown>).zen_mode !== undefined) {
+        setZenMode(!!(profileRes.data as Record<string, unknown>).zen_mode);
+      }
+    }
     if (routinesRes.data) setRoutines(routinesRes.data);
     if (streakRes.data) setStreak(streakRes.data);
     if (habitsRes.data) setAllHabits(habitsRes.data);
@@ -148,6 +184,68 @@ export default function YouPage() {
     setCustomDesc("");
     setCustomIcon("✨");
     setCustomDuration(5);
+  }
+
+  // Todoist handlers
+  async function connectTodoist() {
+    if (!todoistToken.trim()) return;
+    setTodoistSaving(true);
+    setTodoistError("");
+    try {
+      const res = await fetch("/api/todoist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save_token", token: todoistToken.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTodoistConnected(true);
+        setTodoistToken("");
+      } else {
+        setTodoistError(data.error || "Failed to connect");
+      }
+    } catch {
+      setTodoistError("Connection failed");
+    } finally {
+      setTodoistSaving(false);
+    }
+  }
+
+  async function disconnectTodoist() {
+    try {
+      await fetch("/api/todoist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "disconnect" }),
+      });
+      setTodoistConnected(false);
+    } catch {
+      // silently fail
+    }
+  }
+
+  // Notification settings handlers
+  async function saveNotificationSettings() {
+    if (!userId) return;
+    setSettingsSaving(true);
+    try {
+      await supabase
+        .from("profiles")
+        .update({
+          phone_number: phoneNumber || null,
+          notification_preferences: notifPrefs,
+          quiet_hours_start: quietHoursStart || null,
+          quiet_hours_end: quietHoursEnd || null,
+          zen_mode: zenMode,
+        })
+        .eq("id", userId);
+      setSettingsSaved(true);
+      setTimeout(() => setSettingsSaved(false), 2000);
+    } catch {
+      // silently fail
+    } finally {
+      setSettingsSaving(false);
+    }
   }
 
   const streakVisual = streak ? getStreakVisual(streak.current_streak) : null;
@@ -448,7 +546,7 @@ export default function YouPage() {
               : "text-sand-stone"
           }`}
         >
-          My Routines
+          Routines
         </button>
         <button
           onClick={() => setTab("library")}
@@ -458,11 +556,218 @@ export default function YouPage() {
               : "text-sand-stone"
           }`}
         >
-          Habit Library
+          Library
+        </button>
+        <button
+          onClick={() => setTab("settings")}
+          className={`flex-1 py-2 rounded-keystone text-sm font-medium transition-all ${
+            tab === "settings"
+              ? "bg-white text-slate-deep shadow-sm"
+              : "text-sand-stone"
+          }`}
+        >
+          Settings
         </button>
       </div>
 
-      {tab === "routines" ? (
+      {tab === "settings" ? (
+        <div className="space-y-6">
+          {/* Todoist Integration */}
+          <div className="space-y-3">
+            <h2 className="font-display text-base text-slate-deep font-semibold">
+              Todoist
+            </h2>
+            {todoistConnected ? (
+              <div className="card-keystone">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-green-sage rounded-full" />
+                    <span className="text-sm text-slate-deep font-medium">
+                      Connected
+                    </span>
+                  </div>
+                  <button
+                    onClick={disconnectTodoist}
+                    className="text-xs text-sand-stone hover:text-red-500 transition-colors"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+                <p className="text-xs text-sand-stone mt-2">
+                  Today&apos;s tasks will appear on your Today page.
+                </p>
+              </div>
+            ) : (
+              <div className="card-keystone space-y-3">
+                <p className="text-sm text-sand-stone">
+                  Connect your Todoist to see today&apos;s tasks in Keystone.
+                </p>
+                <div>
+                  <label className="block text-xs text-sand-stone mb-1">
+                    API Token (Settings → Integrations → Developer in Todoist)
+                  </label>
+                  <input
+                    type="password"
+                    value={todoistToken}
+                    onChange={(e) => setTodoistToken(e.target.value)}
+                    placeholder="Paste your Todoist API token"
+                    className="w-full px-4 py-2.5 rounded-keystone border border-sand-stone/50 bg-white
+                               text-slate-deep placeholder:text-sand-stone/60 focus:outline-none
+                               focus:ring-2 focus:ring-amber-warm/50 font-body text-sm"
+                  />
+                </div>
+                {todoistError && (
+                  <p className="text-xs text-red-500">{todoistError}</p>
+                )}
+                <button
+                  onClick={connectTodoist}
+                  disabled={!todoistToken.trim() || todoistSaving}
+                  className="btn-primary w-full text-sm py-2 disabled:opacity-40"
+                >
+                  {todoistSaving ? "Connecting..." : "Connect Todoist"}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Notification Preferences */}
+          <div className="space-y-3">
+            <h2 className="font-display text-base text-slate-deep font-semibold">
+              Notifications
+            </h2>
+
+            {/* Zen mode */}
+            <div className="card-keystone">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-slate-deep flex items-center gap-2">
+                    Zen Mode
+                    {zenMode && (
+                      <span className="text-xs bg-indigo-soft/20 text-indigo-soft px-2 py-0.5 rounded-full">
+                        Active
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-sand-stone mt-0.5">
+                    Turn off all notifications
+                  </p>
+                </div>
+                <button
+                  onClick={() => setZenMode(!zenMode)}
+                  className={`w-12 h-7 rounded-full transition-all relative ${
+                    zenMode ? "bg-indigo-soft" : "bg-sand-stone/30"
+                  }`}
+                >
+                  <div
+                    className={`w-5 h-5 bg-white rounded-full shadow-sm absolute top-1 transition-all ${
+                      zenMode ? "left-6" : "left-1"
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
+            {/* Phone number */}
+            <div className="card-keystone space-y-2">
+              <label className="block text-sm font-medium text-slate-deep">
+                Phone Number
+              </label>
+              <input
+                type="tel"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                placeholder="+1 (555) 123-4567"
+                className="w-full px-4 py-2.5 rounded-keystone border border-sand-stone/50 bg-white
+                           text-slate-deep placeholder:text-sand-stone/60 focus:outline-none
+                           focus:ring-2 focus:ring-amber-warm/50 font-body text-sm"
+              />
+              <p className="text-xs text-sand-stone">
+                For SMS reminders. We&apos;ll adapt to your rhythm over time.
+              </p>
+            </div>
+
+            {/* Per-routine notification preferences */}
+            <div className="card-keystone space-y-3">
+              <h3 className="text-sm font-medium text-slate-deep">
+                Routine Notifications
+              </h3>
+              {(["morning", "afternoon", "evening"] as TimeOfDay[]).map((tod) => (
+                <div key={tod} className="flex items-center justify-between">
+                  <span className="text-sm text-slate-deep">
+                    {tod === "morning" ? "🌅" : tod === "afternoon" ? "☀️" : "🌙"}{" "}
+                    {tod.charAt(0).toUpperCase() + tod.slice(1)}
+                  </span>
+                  <select
+                    value={notifPrefs[tod] || "off"}
+                    onChange={(e) =>
+                      setNotifPrefs((prev) => ({
+                        ...prev,
+                        [tod]: e.target.value as NotificationMethod,
+                      }))
+                    }
+                    className="px-3 py-1.5 rounded-keystone border border-sand-stone/50 bg-white
+                               text-slate-deep font-body text-sm focus:outline-none focus:ring-2
+                               focus:ring-amber-warm/50"
+                  >
+                    <option value="off">Off</option>
+                    <option value="sms">SMS</option>
+                    <option value="push">Push</option>
+                    <option value="both">Both</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+
+            {/* Quiet hours */}
+            <div className="card-keystone space-y-3">
+              <h3 className="text-sm font-medium text-slate-deep">
+                Quiet Hours
+              </h3>
+              <p className="text-xs text-sand-stone">
+                No notifications during this window.
+              </p>
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <label className="block text-xs text-sand-stone mb-1">From</label>
+                  <input
+                    type="time"
+                    value={quietHoursStart}
+                    onChange={(e) => setQuietHoursStart(e.target.value)}
+                    className="w-full px-3 py-2 rounded-keystone border border-sand-stone/50 bg-white
+                               text-slate-deep font-body text-sm focus:outline-none focus:ring-2
+                               focus:ring-amber-warm/50"
+                  />
+                </div>
+                <span className="text-sand-stone mt-4">to</span>
+                <div className="flex-1">
+                  <label className="block text-xs text-sand-stone mb-1">Until</label>
+                  <input
+                    type="time"
+                    value={quietHoursEnd}
+                    onChange={(e) => setQuietHoursEnd(e.target.value)}
+                    className="w-full px-3 py-2 rounded-keystone border border-sand-stone/50 bg-white
+                               text-slate-deep font-body text-sm focus:outline-none focus:ring-2
+                               focus:ring-amber-warm/50"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Save button */}
+            <button
+              onClick={saveNotificationSettings}
+              disabled={settingsSaving}
+              className="btn-primary w-full text-sm py-2.5 disabled:opacity-60"
+            >
+              {settingsSaved
+                ? "Saved!"
+                : settingsSaving
+                ? "Saving..."
+                : "Save Notification Settings"}
+            </button>
+          </div>
+        </div>
+      ) : tab === "routines" ? (
         <div className="space-y-3">
           {routines.length > 0 ? (
             routines.map((routine) => (

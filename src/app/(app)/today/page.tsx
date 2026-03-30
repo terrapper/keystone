@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSupabase } from "@/components/providers/supabase-provider";
 import { updateStreak, getStreakVisual, getStreakScale } from "@/lib/streaks";
+import { recordEngagement } from "@/lib/adaptive";
+import { TodoistTasks } from "@/components/today/todoist-tasks";
+import { AdaptiveBanners } from "@/components/today/adaptive-banners";
 import type { Routine, RoutineHabitWithDetails, HabitCompletion, Streak } from "@/lib/types/database";
 import Link from "next/link";
 
@@ -129,6 +132,8 @@ export default function TodayPage() {
       // Update streak
       const updatedStreak = await updateStreak(supabase, userId);
       if (updatedStreak) setStreak(updatedStreak);
+      // Record engagement for adaptive engine
+      recordEngagement(supabase, userId, getCurrentTimeOfDay());
     }
   }
 
@@ -211,6 +216,9 @@ export default function TodayPage() {
           </span>
         </motion.div>
       )}
+
+      {/* Adaptive banners — welcome back, simplification suggestions */}
+      <AdaptiveBanners userId={userId} />
 
       {/* Greeting */}
       <div>
@@ -425,6 +433,9 @@ export default function TodayPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Todoist tasks section */}
+      <TodoistTasks />
 
       {/* Boost button */}
       <Link
