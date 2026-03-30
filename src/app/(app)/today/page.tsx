@@ -7,6 +7,7 @@ import { updateStreak, getStreakVisual, getStreakScale } from "@/lib/streaks";
 import { recordEngagement } from "@/lib/adaptive";
 import { TodoistTasks } from "@/components/today/todoist-tasks";
 import { AdaptiveBanners } from "@/components/today/adaptive-banners";
+import { QuickAddHabit } from "@/components/today/quick-add-habit";
 import type { Routine, RoutineHabitWithDetails, HabitCompletion, Streak } from "@/lib/types/database";
 import Link from "next/link";
 
@@ -36,6 +37,7 @@ export default function TodayPage() {
   const [skipNoteFor, setSkipNoteFor] = useState<string | null>(null);
   const [skipNote, setSkipNote] = useState("");
   const [longPressTimer, setLongPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
 
   const today = new Date().toISOString().split("T")[0];
 
@@ -261,9 +263,20 @@ export default function TodayPage() {
           {getGreeting(displayName)}
         </h1>
         {routine && (
-          <p className="text-sand-stone mt-1">
-            {getCurrentTimeOfDay().charAt(0).toUpperCase() + getCurrentTimeOfDay().slice(1)} routine
-          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-sand-stone">
+              {getCurrentTimeOfDay().charAt(0).toUpperCase() + getCurrentTimeOfDay().slice(1)} routine
+            </p>
+            <Link
+              href="/you"
+              className="w-6 h-6 rounded-full bg-sand-stone/15 flex items-center justify-center text-sand-stone hover:bg-sand-stone/25 transition-colors"
+              title="Edit routine"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M8.5 1.5l2 2-7 7H1.5v-2l7-7z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </Link>
+          </div>
         )}
       </div>
 
@@ -401,14 +414,40 @@ export default function TodayPage() {
               );
             })}
           </AnimatePresence>
+
+          {/* Quick-add button */}
+          {routine && (
+            <button
+              onClick={() => setShowQuickAdd(true)}
+              className="w-full py-3 rounded-keystone border-2 border-dashed border-sand-stone/30 text-sand-stone hover:border-amber-warm/50 hover:text-amber-warm transition-all flex items-center justify-center gap-2"
+            >
+              <span className="text-lg">+</span>
+              <span className="text-sm font-medium">Add a habit</span>
+            </button>
+          )}
         </div>
       ) : (
         <div className="card-keystone text-center py-8">
           <p className="text-sand-stone mb-3">No habits in this routine yet.</p>
-          <Link href="/you" className="text-amber-warm font-medium text-sm">
+          <button
+            onClick={() => setShowQuickAdd(true)}
+            className="text-amber-warm font-medium text-sm"
+          >
             Add some habits →
-          </Link>
+          </button>
         </div>
+      )}
+
+      {/* Quick-add habit sheet */}
+      {routine && (
+        <QuickAddHabit
+          open={showQuickAdd}
+          onClose={() => setShowQuickAdd(false)}
+          routineId={routine.id}
+          routineName={getCurrentTimeOfDay()}
+          existingHabitIds={habits.map((h) => h.habit?.id).filter(Boolean) as string[]}
+          onAdded={() => loadData()}
+        />
       )}
 
       {/* Skip note modal */}
