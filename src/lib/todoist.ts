@@ -63,13 +63,8 @@ export async function closeTask(token: string, taskId: string): Promise<boolean>
  */
 export async function validateToken(token: string): Promise<boolean> {
   try {
-    const res = await fetch("https://api.todoist.com/sync/v9/sync", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: "sync_token=*&resource_types=[\"user\"]",
+    const res = await fetch("https://api.todoist.com/rest/v2/projects", {
+      headers: { Authorization: `Bearer ${token}` },
     });
     return res.ok;
   } catch {
