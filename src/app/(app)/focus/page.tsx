@@ -1,22 +1,29 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSupabase } from "@/components/providers/supabase-provider";
 import type { FocusSession } from "@/lib/types/database";
 
-type TimerState = "setup" | "breathing" | "running" | "complete";
+type TimerState = "setup" | "breathing" | "running" | "complete" | "break" | "break-running";
 type AmbientSound = "rain" | "cafe" | "forest" | "brown-noise" | "lo-fi" | "none";
 
 const DURATION_PRESETS = [15, 25, 45, 60];
+const BREAK_DURATION = 5 * 60; // 5 minutes in seconds
 
-const ambientSounds: { id: AmbientSound; label: string; icon: string }[] = [
-  { id: "none", label: "Silence", icon: "🤫" },
-  { id: "rain", label: "Rain", icon: "🌧️" },
-  { id: "cafe", label: "Cafe", icon: "☕" },
-  { id: "forest", label: "Forest", icon: "🌲" },
-  { id: "brown-noise", label: "Brown Noise", icon: "🔊" },
-  { id: "lo-fi", label: "Lo-fi", icon: "🎵" },
+const QUICK_STARTS: { label: string; duration: number; description: string; icon: string }[] = [
+  { label: "Quick Focus", duration: 15, description: "15 min sprint", icon: "⚡" },
+  { label: "Deep Work", duration: 45, description: "45 min block", icon: "🎯" },
+  { label: "Marathon", duration: 90, description: "90 min session", icon: "🏔️" },
+];
+
+const ambientSounds: { id: AmbientSound; label: string; icon: string; color: string }[] = [
+  { id: "none", label: "Silence", icon: "🤫", color: "sand-stone" },
+  { id: "rain", label: "Rain", icon: "🌧️", color: "indigo-soft" },
+  { id: "cafe", label: "Cafe", icon: "☕", color: "amber-warm" },
+  { id: "forest", label: "Forest", icon: "🌲", color: "green-sage" },
+  { id: "brown-noise", label: "Brown Noise", icon: "🔊", color: "sand-stone" },
+  { id: "lo-fi", label: "Lo-fi", icon: "🎵", color: "indigo-soft" },
 ];
 
 function formatTime(seconds: number): string {
@@ -51,13 +58,16 @@ export default function FocusPage() {
   const [ambientSound, setAmbientSound] = useState<AmbientSound>("none");
   const [breathingEnabled, setBreathingEnabled] = useState(true);
   const [secondsRemaining, setSecondsRemaining] = useState(0);
+  const [breakSecondsRemaining, setBreakSecondsRemaining] = useState(0);
   const [distractionCount, setDistractionCount] = useState(0);
   const [breathPhase, setBreathPhase] = useState<"inhale" | "hold" | "exhale">("inhale");
   const [breathSeconds, setBreathSeconds] = useState(0);
   const [recentSessions, setRecentSessions] = useState<FocusSession[]>([]);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const [pomodoroCount, setPomodoroCount] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const breathRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const breakRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadData = useCallback(async () => {
     const {
@@ -84,6 +94,47 @@ export default function FocusPage() {
     loadData();
   }, [loadData]);
 
+  // Computed stats
+  const stats = useMemo(() => {
+    const totalMinutes = recentSessions.reduce(
+      (sum, s) => sum + (s.actual_minutes || s.duration_minutes),
+      0
+    );
+    const avgMinutes =
+      recentSessions.length > 0
+        ? Math.round(totalMinutes / recentSessions.length)
+        : 0;
+    const totalSessions = recentSessions.length;
+
+    // Focus streak: consecutive days with at least one session (going back from today)
+    const sessionDates = new Set(
+      recentSessions.map((s) =>
+        new Date(s.started_at).toISOString().split("T")[0]
+      )
+    );
+    let streak = 0;
+    const d = new Date();
+    // Check today first
+    const todayStr = d.toISOString().split("T")[0];
+    if (sessionDates.has(todayStr)) {
+      streak = 1;
+      d.setDate(d.getDate() - 1);
+      while (sessionDates.has(d.toISOString().split("T")[0])) {
+        streak++;
+        d.setDate(d.getDate() - 1);
+      }
+    } else {
+      // Check if yesterday had one (streak not yet broken today)
+      d.setDate(d.getDate() - 1);
+      while (sessionDates.has(d.toISOString().split("T")[0])) {
+        streak++;
+        d.setDate(d.getDate() - 1);
+      }
+    }
+
+    return { totalMinutes, avgMinutes, totalSessions, streak };
+  }, [recentSessions]);
+
   // Timer logic
   useEffect(() => {
     if (timerState === "running" && secondsRemaining > 0) {
@@ -104,12 +155,31 @@ export default function FocusPage() {
     };
   }, [timerState, secondsRemaining]);
 
+  // Break timer logic
+  useEffect(() => {
+    if (timerState === "break-running" && breakSecondsRemaining > 0) {
+      breakRef.current = setInterval(() => {
+        setBreakSecondsRemaining((prev) => {
+          if (prev <= 1) {
+            clearInterval(breakRef.current!);
+            setTimerState("break"); // Break over, prompt for next round
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (breakRef.current) clearInterval(breakRef.current);
+    };
+  }, [timerState, breakSecondsRemaining]);
+
   // Breathing animation logic
   useEffect(() => {
     if (timerState === "breathing") {
       let elapsed = 0;
-      const totalBreathDuration = 30; // 30 seconds breathing intro
-      // 4s inhale, 4s hold, 4s exhale = 12s cycle
+      const totalBreathDuration = 30;
 
       breathRef.current = setInterval(() => {
         elapsed++;
@@ -126,7 +196,6 @@ export default function FocusPage() {
 
         if (elapsed >= totalBreathDuration) {
           clearInterval(breathRef.current!);
-          // Start the actual timer
           setTimerState("running");
           setSecondsRemaining(duration * 60);
           setSessionStartTime(new Date());
@@ -139,15 +208,18 @@ export default function FocusPage() {
     };
   }, [timerState, duration]);
 
-  function startSession() {
+  function startSession(overrideDuration?: number) {
+    const dur = overrideDuration || duration;
+    if (overrideDuration) setDuration(dur);
     setDistractionCount(0);
+    setPomodoroCount((prev) => prev + 1);
     if (breathingEnabled) {
       setTimerState("breathing");
       setBreathSeconds(0);
       setBreathPhase("inhale");
     } else {
       setTimerState("running");
-      setSecondsRemaining(duration * 60);
+      setSecondsRemaining(dur * 60);
       setSessionStartTime(new Date());
     }
   }
@@ -155,6 +227,7 @@ export default function FocusPage() {
   function stopSession() {
     if (timerRef.current) clearInterval(timerRef.current);
     if (breathRef.current) clearInterval(breathRef.current);
+    if (breakRef.current) clearInterval(breakRef.current);
     setTimerState("setup");
   }
 
@@ -162,7 +235,17 @@ export default function FocusPage() {
     setDistractionCount((prev) => prev + 1);
   }
 
-  async function saveSession() {
+  function startBreak() {
+    setBreakSecondsRemaining(BREAK_DURATION);
+    setTimerState("break-running");
+  }
+
+  function startAnotherRound() {
+    // Save the completed session first, then start a new one
+    saveSession(true);
+  }
+
+  async function saveSession(continueAfter = false) {
     if (!userId || !sessionStartTime) return;
 
     const actualMinutes = Math.round(
@@ -187,7 +270,12 @@ export default function FocusPage() {
       setRecentSessions((prev) => [data, ...prev]);
     }
 
-    setTimerState("setup");
+    if (continueAfter) {
+      // Start break, then offer another round
+      startBreak();
+    } else {
+      setTimerState("setup");
+    }
   }
 
   const progress =
@@ -196,6 +284,11 @@ export default function FocusPage() {
       : timerState === "complete"
         ? 1
         : 0;
+
+  const breakProgress =
+    timerState === "break-running"
+      ? 1 - breakSecondsRemaining / BREAK_DURATION
+      : 0;
 
   const circumference = 2 * Math.PI * 120;
 
@@ -212,10 +305,69 @@ export default function FocusPage() {
           animate={{ opacity: 1 }}
           className="space-y-6"
         >
+          {/* Quick Start section */}
+          <div>
+            <h3 className="font-display text-sm text-slate-deep font-semibold uppercase tracking-wider mb-3">
+              Quick Start
+            </h3>
+            <div className="grid grid-cols-3 gap-3">
+              {QUICK_STARTS.map((qs) => (
+                <motion.button
+                  key={qs.label}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => startSession(qs.duration)}
+                  className="card-keystone flex flex-col items-center gap-1.5 py-4 hover:border-indigo-soft/40 transition-all"
+                >
+                  <span className="text-2xl">{qs.icon}</span>
+                  <span className="font-display text-sm font-semibold text-slate-deep">
+                    {qs.label}
+                  </span>
+                  <span className="text-xs text-sand-stone">{qs.description}</span>
+                </motion.button>
+              ))}
+            </div>
+          </div>
+
+          {/* Session statistics */}
+          {recentSessions.length > 0 && (
+            <div className="card-keystone">
+              <h3 className="font-display text-sm text-slate-deep font-semibold uppercase tracking-wider mb-3">
+                This Week
+              </h3>
+              <div className="grid grid-cols-4 gap-3 text-center">
+                <div>
+                  <div className="font-display text-xl text-indigo-soft font-bold">
+                    {stats.totalMinutes}
+                  </div>
+                  <div className="text-xs text-sand-stone">total min</div>
+                </div>
+                <div>
+                  <div className="font-display text-xl text-amber-warm font-bold">
+                    {stats.avgMinutes}
+                  </div>
+                  <div className="text-xs text-sand-stone">avg min</div>
+                </div>
+                <div>
+                  <div className="font-display text-xl text-green-sage font-bold">
+                    {stats.totalSessions}
+                  </div>
+                  <div className="text-xs text-sand-stone">sessions</div>
+                </div>
+                <div>
+                  <div className="font-display text-xl text-amber-warm font-bold flex items-center justify-center gap-1">
+                    {stats.streak > 0 && <span className="text-sm">🔥</span>}
+                    {stats.streak}
+                  </div>
+                  <div className="text-xs text-sand-stone">day streak</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Duration picker */}
           <div className="card-keystone">
             <h3 className="font-display text-sm text-slate-deep font-semibold uppercase tracking-wider mb-3">
-              Duration
+              Custom Duration
             </h3>
             <div className="flex gap-2">
               {DURATION_PRESETS.map((preset) => (
@@ -234,7 +386,7 @@ export default function FocusPage() {
             </div>
           </div>
 
-          {/* Ambient sound selector */}
+          {/* Ambient sound selector — visual cards */}
           <div className="card-keystone">
             <h3 className="font-display text-sm text-slate-deep font-semibold uppercase tracking-wider mb-3">
               Ambient Sound
@@ -244,13 +396,13 @@ export default function FocusPage() {
                 <button
                   key={sound.id}
                   onClick={() => setAmbientSound(sound.id)}
-                  className={`py-3 rounded-keystone text-sm transition-all flex flex-col items-center gap-1 ${
+                  className={`py-4 rounded-keystone text-sm transition-all flex flex-col items-center gap-1.5 ${
                     ambientSound === sound.id
-                      ? "bg-indigo-soft/10 border-2 border-indigo-soft text-slate-deep"
-                      : "bg-sand-stone/10 text-slate-deep border-2 border-transparent"
+                      ? `bg-${sound.color}/10 border-2 border-${sound.color} text-slate-deep shadow-sm`
+                      : "bg-sand-stone/10 text-slate-deep border-2 border-transparent hover:bg-sand-stone/15"
                   }`}
                 >
-                  <span className="text-lg">{sound.icon}</span>
+                  <span className="text-2xl">{sound.icon}</span>
                   <span className="text-xs font-medium">{sound.label}</span>
                 </button>
               ))}
@@ -282,8 +434,8 @@ export default function FocusPage() {
           </div>
 
           {/* Start button */}
-          <button onClick={startSession} className="btn-primary w-full text-lg">
-            Start Focus Session
+          <button onClick={() => startSession()} className="btn-primary w-full text-lg">
+            Start {duration}-Minute Session
           </button>
         </motion.div>
       )}
@@ -450,9 +602,93 @@ export default function FocusPage() {
             </div>
           </div>
 
-          <button onClick={saveSession} className="btn-primary w-full max-w-sm">
-            Save Session
+          {/* Pomodoro: offer break + another round */}
+          <div className="w-full max-w-sm space-y-3">
+            <button
+              onClick={() => saveSession(true)}
+              className="btn-primary w-full"
+            >
+              Take a 5-min break, then go again
+            </button>
+            <button onClick={() => saveSession(false)} className="btn-secondary w-full">
+              Save &amp; finish
+            </button>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Break timer running */}
+      {timerState === "break-running" && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex flex-col items-center justify-center min-h-[50vh] space-y-8"
+        >
+          <p className="text-sand-stone text-sm font-medium">Break time — stretch, breathe, look away from the screen.</p>
+
+          <div className="relative w-48 h-48">
+            <svg className="w-48 h-48 -rotate-90" viewBox="0 0 200 200">
+              <circle cx="100" cy="100" r="90" fill="none" stroke="#C4A882" strokeWidth="5" opacity="0.15" />
+              <motion.circle
+                cx="100"
+                cy="100"
+                r="90"
+                fill="none"
+                stroke="#7B9E6B"
+                strokeWidth="5"
+                strokeLinecap="round"
+                strokeDasharray={2 * Math.PI * 90}
+                animate={{
+                  strokeDashoffset: 2 * Math.PI * 90 * (1 - breakProgress),
+                }}
+                transition={{ duration: 0.5, ease: "linear" }}
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-2xl mb-1">☕</span>
+              <span className="font-display text-3xl text-slate-deep font-bold">
+                {formatTime(breakSecondsRemaining)}
+              </span>
+            </div>
+          </div>
+
+          <button onClick={stopSession} className="text-sand-stone text-sm underline">
+            Skip break
           </button>
+        </motion.div>
+      )}
+
+      {/* Break finished — prompt next round */}
+      {timerState === "break" && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col items-center justify-center min-h-[50vh] space-y-6"
+        >
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+            className="w-20 h-20 rounded-full bg-green-sage/20 flex items-center justify-center"
+          >
+            <span className="text-4xl">🔄</span>
+          </motion.div>
+
+          <h2 className="font-display text-2xl text-slate-deep font-bold text-center">
+            Break over!
+          </h2>
+          <p className="text-sand-stone text-center">
+            Round {pomodoroCount} complete. Ready for another?
+          </p>
+
+          <div className="w-full max-w-sm space-y-3">
+            <button onClick={() => startSession()} className="btn-primary w-full">
+              Start another {duration}-min round
+            </button>
+            <button onClick={() => setTimerState("setup")} className="btn-secondary w-full">
+              Done for now
+            </button>
+          </div>
         </motion.div>
       )}
 
